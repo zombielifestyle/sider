@@ -187,6 +187,30 @@ class SiderClientTest extends PHPUnit_Framework_TestCase {
         $this->assertEquals(array_values($hash), $keys);
     }
 
+    function testList() {
+        $client = $this->getClient();
+        $len = $client->rpushx("lst", "jelly");
+        $this->assertEquals(0, $len)    ;
+        $len = $client->rpush("lst", "jelly");
+        $this->assertEquals(1, $len);
+        $len = $client->rpush("lst", array("bacon", "cupcake"));
+        $this->assertEquals(3, $len);
+        $len = $client->lset("lst", 0, "nacho");
+        $this->assertEquals(true, $len);
+        $val = $client->rpop("lst");
+        $this->assertEquals("cupcake", $val);
+        $val = $client->lrange("lst", 0, 2);
+        $this->assertEquals(array("nacho","bacon"), $val);
+        $val = $client->llen("lst");
+        $this->assertEquals(2, $val);
+        $val = $client->ltrim("lst", 0, 0);
+        $this->assertTrue($val);
+        $val = $client->llen("lst");
+        $this->assertEquals(1, $val);
+        $val = $client->lrem("lst", 1, "nacho");
+        $this->assertEquals(1, $val);
+    }
+
     function testPipeline() {
         $client = $this->getClient();
         $client->pipe();

@@ -79,13 +79,30 @@ class sider_Client {
             $this->pipedCommands++;
             $this->metrics['commandsSend']++;
         } else {
+            // argument 1 is a hash
             if ("mget" == $method) {
                 $args = $args[0];
-            } else if ("hmget" == $method) {
+            // argument 2 is a list or value
+            } else if ("hmget" == $method 
+                    || "rpush" == $method
+                    || "lpush" == $method
+                    || "blpop" == $method
+                    || "brpop" == $method) {
+                $key = array_shift($args);
+                if (is_array($args[0])) {
+                    $args = $args[0];
+                }
+                array_unshift($args, $key);
+            }/*
+            } else if ("hmget" == $method 
+                    || "rpush" == $method
+                    || "lpush" == $method
+                    || "blpop" == $method
+                    || "brpop" == $method) {
                 $key = array_shift($args);
                 $args = $args[0];
                 array_unshift($args, $key);
-            }
+            }*/
             array_unshift($args, $method);
             $this->sendCommands(array($args));
         }
