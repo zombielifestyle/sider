@@ -54,6 +54,9 @@ class sider_Client {
     }
 
     function pipe() {
+        if ($this->pipe) {
+            throw new Exception("pipeline already enabled");
+        }
         $this->pipe = true;
         $this->pipedCommands = 0;
         return $this;
@@ -118,8 +121,11 @@ class sider_Client {
         $this->metrics['socketWrites']++;
         $len = strlen($msg);
         $written = fwrite($this->socket, $msg, $len);
-        if (false === $written || $written != $len) {
-            throw new Exception("send error");
+        if (false === $written) {
+            throw new Exception("write error");
+        }
+        if ($written < $len) {
+            throw new Exception("write error, written($written) of len($len)");
         }
         return $written;
     }
@@ -127,8 +133,12 @@ class sider_Client {
     private function receive() {
         $replies = array();
         while ($this->pipedCommands > 0) {
-            $this->metrics['socketReads']++;
-            $response = fread($this->socket, 8192);
+            $response = '';
+            do {
+                $this->metrics['socketReads']++;
+                $responsePart = fread($this->socket, 8192);
+                $response.= $responsePart;
+            } while (strlen($responsePart) == 8192);
             if (empty($response)) {
                 throw new Exception("received empty response. protocol error or timeout");
             }
@@ -141,54 +151,49 @@ class sider_Client {
     }
 
     private function parse($response) {
-        $type = $response{0};
         $replies = array();
-        $multiBulkReplies = 1;
-        $end = $start = 0;
-        while ($start < strlen($response)) {
-            $mbulk = false;
-            if ('*' === $type) {
-                $start++;
-                $end = strpos($response, "\r\n");
-                $multiBulkReplies = substr($response, $start, $end - $start);
-                $start = $end + 2;
-                $mbulk = true;
+        $multiBulkReplies = 0;
+        $responseLen = strlen($response);
+        for ($i = 0; $i < $responseLen;) {
+            $type = $response{$i};
+            $start = $i+1;
+
+            if ($multiBulkReplies > 0) {
+                $multiBulkReplies--;
+            } else {
                 $this->pipedCommands--;
                 $this->metrics['repliesReceived']++;
             }
-            for ($i = 1; $i <= $multiBulkReplies; $i++) {
-                if (!$mbulk) {
-                    $this->pipedCommands--;
-                    $this->metrics['repliesReceived']++;
+
+            while (true) {
+                if ($response{$i} == "\r") {
+                    $i+=2;
+                    break;
                 }
-                $type = $response{$start};
-                $start++;
-                $end = strpos($response, "\r\n", $start) + 2;
-                $msg = substr($response, $start, $end - $start - 2);
-                if ('+' === $type) {
-                    if ($msg == 'OK') {
-                        $msg = true;
-                    }
-                    $start = $end;
-                    $replies[] = $msg;
-                } elseif ('-' === $type) {
-                    throw new Exception($msg);
-                } elseif (':' === $type) {
-                    $start = $end;
-                    $replies[] = intval($msg);
-                } elseif ('$' === $type) {
-                    $len = intval($msg);
-                    $start = $end;
-                    if ($len >= 0) {
-                        $replies[] = substr($response, $start, $len);
-                        $start += $len + 2;
-                    } else {
-                        $replies[] = null;
-                        $start += 4;
-                    }
+                ++$i;
+            }
+
+            $reply = substr($response, $start, $i - $start - 2);
+            if ("-" == $type) {
+                throw new Exception($reply);
+            } else if ("+" == $type || ':' == $type) {
+                if ($reply == 'OK') {
+                    $reply = true;
+                }
+                $replies[] = $reply;
+            } else if ("$" == $type) {
+                $len = intval($reply);
+                if ($len > 0) {
+                    $replies[] = substr($response, $i, $len);
+                    $i += $len + 2;
                 } else {
-                    throw new Exception("protocol or parse error");
+                    $replies[] = null;
+                    $i+=4;
                 }
+            } else if ("*" == $type) {
+                $multiBulkReplies += intval($reply);
+            } else {
+                throw new Exception("parse error for reply type($type)");
             }
         }
         return $replies;
