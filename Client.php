@@ -161,8 +161,10 @@ class sider_Client {
             }
             $replies = array_merge($replies, $this->parse($response));
         }
-        if (count($replies) === 1) {
+        if (count($replies) == 1) {
             return reset($replies);
+        } else if (count($replies) == 0) {
+            return null;
         }
         return $replies;
     }

@@ -60,6 +60,11 @@ class SiderClientTest extends PHPUnit_Framework_TestCase {
         $this->assertEquals("PONG", $client->ping());
     }
 
+    function testEcho() {
+        $client = $this->getClient();
+        $this->assertEquals("wo\r\not", $client->echo("wo\r\not"));
+    }
+
     function testNonsense() {
         $client = $this->getClient();
         try {
@@ -258,11 +263,32 @@ class SiderClientTest extends PHPUnit_Framework_TestCase {
         $ok = $client->multi();
         $this->assertTrue($ok);
         $ok = $client->incr("bacon");
-        $this->assertEquals("queued", $ok);
+        $this->assertEquals("QUEUED", $ok);
         $client->incr("potatoes");
-        $this->assertEquals("queued", $ok);
+        $this->assertEquals("QUEUED", $ok);
         $replies = $client->exec();
-        $this->assertEquals(array(1, 1), $ok);
+        $this->assertEquals(array(1, 1), $replies);
+    }
+
+    function testTransactionWithWatchAborts() {
+        $otherClient = new sider_Client();
+        $otherClient->connect();
+        $otherClient->select(3);
+
+        $client = $this->getClient();
+        $ok = $client->incr("bacon");
+        $ok = $client->watch("bacon");
+        $this->assertTrue($ok);
+        $client->multi();
+
+        $ok = $client->incrby("bacon", 5);
+        $this->assertEquals("QUEUED", $ok);
+
+        $val = $otherClient->incr("bacon");
+        $this->assertEquals(2, $val);
+
+        $replies = $client->exec();
+        $this->assertNull($replies);
     }
 
 }
