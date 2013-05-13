@@ -253,4 +253,16 @@ class SiderClientTest extends PHPUnit_Framework_TestCase {
         $this->assertEquals($expectedMetrics, $client->metrics());
     }
 
+    function testMulti() {
+        $client = $this->getClient();
+        $ok = $client->multi();
+        $this->assertTrue($ok);
+        $ok = $client->incr("bacon");
+        $this->assertEquals("queued", $ok);
+        $client->incr("potatoes");
+        $this->assertEquals("queued", $ok);
+        $replies = $client->exec();
+        $this->assertEquals(array(1, 1), $ok);
+    }
+
 }
